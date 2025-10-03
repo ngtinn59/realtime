@@ -2,11 +2,17 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"sync"
+	"time"
 
+	"web-api/internal/pkg/database"
+	"web-api/internal/pkg/models"
 	"web-api/internal/pkg/redis"
 
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 var (
@@ -56,6 +62,9 @@ func NewHub() *Hub {
 
 // Run starts the hub
 func (h *Hub) Run() {
+	// Start typing cleanup routine
+	go h.typingCleanupRoutine()
+
 	for {
 		select {
 		case client := <-h.Register:
@@ -66,6 +75,18 @@ func (h *Hub) Run() {
 
 		case message := <-h.Broadcast:
 			h.handleBroadcast(message)
+		}
+	}
+}
+
+// typingCleanupRoutine periodically cleans up expired typing indicators
+func (h *Hub) typingCleanupRoutine() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := redis.CleanupExpiredTyping(); err != nil {
+			logrus.Errorf("Failed to cleanup expired typing indicators: %v", err)
 		}
 	}
 }
@@ -83,8 +104,16 @@ func (h *Hub) registerClient(client *Client) {
 
 	logrus.Infof("User %d (%s) connected. Total clients: %d", client.UserID, client.Username, len(h.Clients))
 
-	// Broadcast user online status
-	h.broadcastUserStatus(client.UserID, true)
+	// Broadcast user online status via Redis
+	data := map[string]interface{}{
+		"user_id":   client.UserID,
+		"is_online": true,
+	}
+
+	channel := fmt.Sprintf("ws:user:%d", client.UserID)
+	if err := redis.BroadcastToChannel(channel, "user_status", data); err != nil {
+		logrus.Errorf("Failed to broadcast user online status: %v", err)
+	}
 }
 
 // unregisterClient unregisters a client
@@ -96,6 +125,9 @@ func (h *Hub) unregisterClient(client *Client) {
 	}
 	h.mu.Unlock()
 
+	// Stop Redis subscriber
+	client.StopRedisSubscriber()
+
 	// Set user as offline in Redis
 	if err := redis.SetUserOffline(client.UserID); err != nil {
 		logrus.Errorf("failed to set user offline: %v", err)
@@ -103,12 +135,60 @@ func (h *Hub) unregisterClient(client *Client) {
 
 	logrus.Infof("User %d (%s) disconnected. Total clients: %d", client.UserID, client.Username, len(h.Clients))
 
-	// Broadcast user offline status
-	h.broadcastUserStatus(client.UserID, false)
+	// Broadcast user offline status via Redis
+	data := map[string]interface{}{
+		"user_id":   client.UserID,
+		"is_online": false,
+		"last_seen": time.Now().Format(time.RFC3339),
+	}
+
+	channel := fmt.Sprintf("ws:user:%d", client.UserID)
+	if err := redis.BroadcastToChannel(channel, "user_status", data); err != nil {
+		logrus.Errorf("Failed to broadcast user offline status: %v", err)
+	}
+}
+
+// validateMessage validates incoming WebSocket message structure
+func validateMessage(msg Message) error {
+	if msg.Event == "" {
+		return errors.New("message event cannot be empty")
+	}
+
+	if msg.Data == nil {
+		return errors.New("message data cannot be nil")
+	}
+
+	// Validate specific events
+	switch msg.Event {
+	case "send_private_message":
+		if _, ok := msg.Data["receiver_id"].(float64); !ok {
+			return errors.New("private message must have valid receiver_id")
+		}
+	case "send_group_message":
+		if _, ok := msg.Data["group_id"].(float64); !ok {
+			return errors.New("group message must have valid group_id")
+		}
+	case "user_typing":
+		if _, ok := msg.Data["conversation_id"].(string); !ok {
+			return errors.New("typing message must have conversation_id")
+		}
+	case "message_read":
+		if _, ok := msg.Data["message_id"].(float64); !ok {
+			return errors.New("message_read must have valid message_id")
+		}
+	}
+
+	return nil
 }
 
 // handleBroadcast processes broadcast messages
 func (h *Hub) handleBroadcast(bm BroadcastMessage) {
+	// Validate message structure
+	if err := validateMessage(bm.Message); err != nil {
+		logrus.Errorf("Invalid message from user %d: %v", bm.SenderID, err)
+		return
+	}
+
 	switch bm.Message.Event {
 	case "send_private_message":
 		h.handlePrivateMessage(bm)
@@ -116,9 +196,23 @@ func (h *Hub) handleBroadcast(bm BroadcastMessage) {
 		h.handleGroupMessage(bm)
 	case "user_typing":
 		h.handleTypingIndicator(bm)
+	case "message_read":
+		h.handleMessageRead(bm)
+	case "ping":
+		h.handlePing(bm)
+	case "pong":
+		logrus.Debugf("Received pong from user %d", bm.SenderID)
 	default:
 		logrus.Warnf("Unknown event: %s", bm.Message.Event)
 	}
+}
+
+// handlePing handles ping messages and responds with pong
+func (h *Hub) handlePing(bm BroadcastMessage) {
+	logrus.Debugf("Received ping from user %d, sending pong", bm.SenderID)
+	h.SendToUser(bm.SenderID, "pong", map[string]interface{}{
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }
 
 // handlePrivateMessage handles private message sending
@@ -131,15 +225,34 @@ func (h *Hub) handlePrivateMessage(bm BroadcastMessage) {
 		return
 	}
 
-	logrus.Infof("Sending private message to receiver %d", uint(receiverID))
+	content, ok := bm.Message.Data["content"].(string)
+	if !ok {
+		logrus.Error("Invalid content in private message")
+		return
+	}
+
+	logrus.Infof("Saving private message to database and sending to receiver %d", uint(receiverID))
+
+	// Save message to database first
+	message, err := savePrivateMessageToDB(bm.SenderID, uint(receiverID), content, bm.Message.Data)
+	if err != nil {
+		logrus.Errorf("Failed to save private message to database: %v", err)
+		return
+	}
+
+	// Update message data with database ID and timestamps
+	updatedData := bm.Message.Data
+	updatedData["message_id"] = message.ID
+	updatedData["created_at"] = message.CreatedAt
+	updatedData["updated_at"] = message.UpdatedAt
 
 	// Send to receiver if online
-	h.SendToUser(uint(receiverID), "private_message", bm.Message.Data)
+	h.SendToUser(uint(receiverID), "private_message", updatedData)
 
 	// Also send back to sender for confirmation
-	h.SendToUser(bm.SenderID, "message_sent", bm.Message.Data)
+	h.SendToUser(bm.SenderID, "message_sent", updatedData)
 
-	logrus.Info("Private message broadcast completed")
+	logrus.Info("Private message saved and broadcast completed")
 }
 
 // handleGroupMessage handles group message sending
@@ -150,8 +263,35 @@ func (h *Hub) handleGroupMessage(bm BroadcastMessage) {
 		return
 	}
 
-	// Broadcast to all group members (implement group member lookup)
-	h.BroadcastToGroup(uint(groupID), "group_message", bm.Message.Data, bm.SenderID)
+	content, ok := bm.Message.Data["content"].(string)
+	if !ok {
+		logrus.Error("Invalid content in group message")
+		return
+	}
+
+	logrus.Infof("Saving group message to database and broadcasting to group %d", uint(groupID))
+
+	// Save message to database first
+	message, err := saveGroupMessageToDB(bm.SenderID, uint(groupID), content, bm.Message.Data)
+	if err != nil {
+		logrus.Errorf("Failed to save group message to database: %v", err)
+		return
+	}
+
+	// Update message data with database ID and timestamps
+	updatedData := bm.Message.Data
+	updatedData["message_id"] = message.ID
+	updatedData["created_at"] = message.CreatedAt
+	updatedData["updated_at"] = message.UpdatedAt
+
+	// Broadcast to all group members via Redis
+	channel := fmt.Sprintf("ws:group:%d", uint(groupID))
+	if err := redis.BroadcastToChannel(channel, "group_message", updatedData); err != nil {
+		logrus.Errorf("Failed to broadcast group message: %v", err)
+		return
+	}
+
+	logrus.Info("Group message saved and broadcast completed")
 }
 
 // handleTypingIndicator handles typing indicator
@@ -168,6 +308,20 @@ func (h *Hub) handleTypingIndicator(bm BroadcastMessage) {
 	if receiverID, ok := bm.Message.Data["receiver_id"].(float64); ok {
 		h.SendToUser(uint(receiverID), "user_typing", bm.Message.Data)
 	}
+}
+
+// handleMessageRead handles message read acknowledgment
+func (h *Hub) handleMessageRead(bm BroadcastMessage) {
+	messageID, ok := bm.Message.Data["message_id"].(float64)
+	if !ok {
+		logrus.Error("Invalid message_id in message_read event")
+		return
+	}
+
+	logrus.Infof("Message %d marked as read by user %d", uint(messageID), bm.SenderID)
+
+	// For now, just log the event
+	// TODO: Broadcast read status to relevant users (sender of the message)
 }
 
 // SendToUser sends a message to a specific user
@@ -189,8 +343,8 @@ func (h *Hub) SendToUser(userID uint, event string, data map[string]interface{})
 
 // BroadcastToGroup sends a message to all members of a group
 func (h *Hub) BroadcastToGroup(groupID uint, event string, data map[string]interface{}, excludeUserID uint) {
-	// Note: You'll need to implement group member lookup from database
-	// For now, this is a placeholder
+	// Note: For now, broadcast to all online users
+	// TODO: Implement proper group member lookup to avoid import cycle
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -240,48 +394,165 @@ func (h *Hub) GetOnlineUsers() []uint {
 	return users
 }
 
+// GetConnectionStats returns WebSocket connection statistics
+func (h *Hub) GetConnectionStats() map[string]interface{} {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	stats := map[string]interface{}{
+		"total_connections": len(h.Clients),
+		"clients":          make([]map[string]interface{}, 0, len(h.Clients)),
+	}
+
+	for _, client := range h.Clients {
+		clientStats := map[string]interface{}{
+			"user_id":  client.UserID,
+			"username": client.Username,
+		}
+		stats["clients"] = append(stats["clients"].([]map[string]interface{}), clientStats)
+	}
+
+	return stats
+}
+
 // GetHub returns the global hub instance
 func GetHub() *Hub {
 	return hubInstance
 }
 
-// BroadcastPrivateMessage broadcasts a private message to WebSocket clients
+// BroadcastPrivateMessage broadcasts a private message using Redis pub/sub
 func BroadcastPrivateMessage(senderID, receiverID uint, messageData map[string]interface{}) {
-	logrus.Infof("Broadcasting private message from %d to %d: %v", senderID, receiverID, messageData)
+	logrus.Infof("Publishing private message from %d to %d via Redis", senderID, receiverID)
 
-	if hubInstance == nil {
-		logrus.Error("Hub instance is nil, cannot broadcast message")
+	// Publish to Redis channel for the specific receiver
+	channel := fmt.Sprintf("ws:user:%d", receiverID)
+	if err := redis.BroadcastToChannel(channel, "private_message", messageData); err != nil {
+		logrus.Errorf("Failed to publish private message to Redis: %v", err)
 		return
 	}
 
-	logrus.Infof("Sending message to broadcast channel, current clients: %d", len(hubInstance.Clients))
-
-	// Use select with timeout to avoid blocking
-	select {
-	case hubInstance.Broadcast <- BroadcastMessage{
-		Message: Message{
-			Event: "send_private_message",
-			Data:  messageData,
-		},
-		SenderID: senderID,
-	}:
-		logrus.Info("Message sent to broadcast channel successfully")
-	default:
-		logrus.Error("Broadcast channel is full, message dropped")
+	// Also send confirmation back to sender
+	senderChannel := fmt.Sprintf("ws:user:%d", senderID)
+	confirmationData := map[string]interface{}{
+		"type":        "message_sent",
+		"message_id":  messageData["message_id"],
+		"receiver_id": receiverID,
+		"content":     messageData["content"],
+		"created_at":  messageData["created_at"],
 	}
+	if err := redis.BroadcastToChannel(senderChannel, "message_sent", confirmationData); err != nil {
+		logrus.Errorf("Failed to send confirmation to sender: %v", err)
+		return
+	}
+
+	logrus.Info("Private message published to Redis successfully")
 }
 
-// BroadcastGroupMessage broadcasts a group message to WebSocket clients
-func BroadcastGroupMessage(senderID, groupID uint, messageData map[string]interface{}) {
-	if hubInstance == nil {
-		return
+// savePrivateMessageToDB saves a private message to the database
+func savePrivateMessageToDB(senderID, receiverID uint, content string, messageData map[string]interface{}) (*models.PrivateMessage, error) {
+	db := database.GetDB()
+
+	// Verify receiver exists
+	var receiver models.User
+	if err := db.First(&receiver, receiverID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("receiver not found")
+		}
+		return nil, err
 	}
 
-	hubInstance.Broadcast <- BroadcastMessage{
-		Message: Message{
-			Event: "send_group_message",
-			Data:  messageData,
-		},
-		SenderID: senderID,
+	// Determine message type
+	msgType := models.MessageTypeText
+	if t, ok := messageData["type"].(string); ok && t != "" {
+		msgType = models.MessageType(t)
 	}
+
+	// Create message
+	message := models.PrivateMessage{
+		SenderID:   senderID,
+		ReceiverID: receiverID,
+		Content:    content,
+		Type:       msgType,
+		IsRead:     false,
+	}
+
+	// Handle file_id if present
+	if fileID, ok := messageData["file_id"].(float64); ok && fileID > 0 {
+		uintFileID := uint(fileID)
+		message.FileID = &uintFileID
+	}
+
+	// Use transaction to ensure data consistency
+	tx := db.Begin()
+	if err := tx.Create(&message).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	// Load relations
+	if err := tx.Preload("Sender").Preload("Receiver").Preload("File").First(&message, message.ID).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+
+	return &message, nil
+}
+
+// saveGroupMessageToDB saves a group message to the database
+func saveGroupMessageToDB(senderID, groupID uint, content string, messageData map[string]interface{}) (*models.GroupMessage, error) {
+	db := database.GetDB()
+
+	// Verify user is a member of the group
+	var member models.GroupMember
+	if err := db.Where("group_id = ? AND user_id = ?", groupID, senderID).First(&member).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("you are not a member of this group")
+		}
+		return nil, err
+	}
+
+	// Determine message type
+	msgType := models.MessageTypeText
+	if t, ok := messageData["type"].(string); ok && t != "" {
+		msgType = models.MessageType(t)
+	}
+
+	// Create message
+	message := models.GroupMessage{
+		GroupID:  groupID,
+		SenderID: senderID,
+		Content:  content,
+		Type:     msgType,
+	}
+
+	// Handle file_id if present
+	if fileID, ok := messageData["file_id"].(float64); ok && fileID > 0 {
+		uintFileID := uint(fileID)
+		message.FileID = &uintFileID
+	}
+
+	// Use transaction to ensure data consistency
+	tx := db.Begin()
+	if err := tx.Create(&message).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	// Load relations
+	if err := tx.Preload("Sender").Preload("Group").Preload("File").First(&message, message.ID).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+
+	return &message, nil
 }

@@ -1,10 +1,15 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
+	"web-api/internal/pkg/redis"
+
 	"github.com/gorilla/websocket"
+	redispkg "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,11 +29,106 @@ const (
 
 // Client represents a websocket client
 type Client struct {
-	Hub      *Hub
-	Conn     *websocket.Conn
-	Send     chan []byte
-	UserID   uint
-	Username string
+	Hub             *Hub
+	Conn            *websocket.Conn
+	Send            chan []byte
+	UserID          uint
+	Username        string
+	redisSubscriber *redispkg.PubSub
+	stopSubscriber  chan struct{}
+}
+
+// StartRedisSubscriber starts listening for Redis messages for this user
+func (c *Client) StartRedisSubscriber() {
+	channel := fmt.Sprintf("ws:user:%d", c.UserID)
+
+	pubsub := redis.SubscribeWebSocket(channel)
+	c.redisSubscriber = pubsub
+	c.stopSubscriber = make(chan struct{})
+
+	logrus.Infof("Started Redis subscriber for user %d on channel %s", c.UserID, channel)
+
+	go func() {
+		defer func() {
+			if c.redisSubscriber != nil {
+				c.redisSubscriber.Close()
+			}
+			logrus.Infof("Redis subscriber stopped for user %d", c.UserID)
+		}()
+
+		for {
+			select {
+			case <-c.stopSubscriber:
+				logrus.Infof("Stopping Redis subscriber for user %d", c.UserID)
+				return
+			default:
+				if c.redisSubscriber == nil {
+					return
+				}
+
+				msg, err := c.redisSubscriber.ReceiveMessage(context.Background())
+				if err != nil {
+					logrus.Errorf("Redis subscriber error for user %d: %v", c.UserID, err)
+					return
+				}
+
+				// Parse Redis message
+				var messageData map[string]interface{}
+				if err := json.Unmarshal([]byte(msg.Payload), &messageData); err != nil {
+					logrus.Errorf("Failed to unmarshal Redis message: %v", err)
+					continue
+				}
+
+				// Create WebSocket message
+				event, ok := messageData["event"].(string)
+				if !ok {
+					continue
+				}
+
+				data, ok := messageData["data"].(map[string]interface{})
+				if !ok {
+					data = make(map[string]interface{})
+				}
+
+				wsMessage := Message{
+					Event: event,
+					Data:  data,
+				}
+
+				jsonMsg, err := json.Marshal(wsMessage)
+				if err != nil {
+					logrus.Errorf("Failed to marshal WebSocket message: %v", err)
+					continue
+				}
+
+				// Send to client's WebSocket connection with timeout
+				select {
+				case c.Send <- jsonMsg:
+					logrus.Debugf("Sent Redis message to user %d: %s", c.UserID, event)
+				case <-time.After(1 * time.Second):
+					logrus.Warnf("Client %d send channel timeout, dropping message", c.UserID)
+				case <-c.stopSubscriber:
+					return
+				}
+			}
+		}
+	}()
+}
+
+// StopRedisSubscriber stops the Redis subscriber
+func (c *Client) StopRedisSubscriber() {
+	if c.stopSubscriber != nil {
+		select {
+		case <-c.stopSubscriber:
+			// Already closed
+		default:
+			close(c.stopSubscriber)
+		}
+	}
+	if c.redisSubscriber != nil {
+		c.redisSubscriber.Close()
+		c.redisSubscriber = nil
+	}
 }
 
 // ReadPump pumps messages from the websocket connection to the hub
@@ -36,6 +136,7 @@ func (c *Client) ReadPump() {
 	defer func() {
 		c.Hub.Unregister <- c
 		c.Conn.Close()
+		c.StopRedisSubscriber()
 	}()
 
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -82,6 +183,7 @@ func (c *Client) WritePump() {
 	defer func() {
 		ticker.Stop()
 		c.Conn.Close()
+		c.StopRedisSubscriber()
 	}()
 
 	for {

@@ -9,12 +9,12 @@ import (
 )
 
 type ENV struct {
-	ENV       string
-	HOST      string
-	USER_NAME string
-	PASSWORD  string
-	DB_NAME   string
-	URL_DIR   string
+	ENV       string `mapstructure:"APP_ENV"`
+	HOST      string `mapstructure:"DB_HOST"`
+	USER_NAME string `mapstructure:"DB_USER"`
+	PASSWORD  string `mapstructure:"DB_PASSWORD"`
+	DB_NAME   string `mapstructure:"DB_NAME"`
+	URL_DIR   string `mapstructure:"URL_DIR"`
 }
 
 func LoadFileENV() *ENV {

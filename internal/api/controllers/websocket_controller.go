@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"web-api/internal/api/services"
+	"web-api/internal/pkg/redis"
 	"web-api/internal/pkg/utils"
 	"web-api/internal/pkg/websocket"
 
@@ -76,8 +77,14 @@ func (ctrl *WebSocketController) HandleWebSocket(c *gin.Context) {
 	// Register client
 	client.Hub.Register <- client
 
-	// Update user status in database
+	// Start Redis subscriber for this user
+	go client.StartRedisSubscriber()
+
+	// Update user status in database and Redis
 	services.User.UpdateUserStatus(claims.UserID, true)
+	if err := redis.SetUserOnline(claims.UserID); err != nil {
+		logrus.Errorf("Failed to set user online in Redis: %v", err)
+	}
 
 	// Start client goroutines
 	go client.WritePump()

@@ -7,6 +7,7 @@ import (
 	"web-api/internal/pkg/models"
 	"web-api/internal/pkg/websocket"
 
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -71,6 +72,7 @@ func (s *ChatService) SendPrivateMessage(senderID uint, req SendPrivateMessageRe
 		"file_id":     message.FileID,
 		"created_at":  message.CreatedAt,
 	}
+	logrus.Infof("Broadcasting private message: %+v", messageData)
 	websocket.BroadcastPrivateMessage(senderID, req.ReceiverID, messageData)
 
 	// Load sender and receiver info
@@ -175,7 +177,10 @@ func (s *ChatService) SendGroupMessage(senderID uint, req SendGroupMessageReques
 		"file_id":    message.FileID,
 		"created_at": message.CreatedAt,
 	}
-	websocket.BroadcastGroupMessage(senderID, req.GroupID, messageData)
+	logrus.Infof("Broadcasting group message: %+v", messageData)
+	// TODO: Implement group message saving via WebSocket for consistency
+	// For now, use the old REST API approach for group messages
+	// websocket.BroadcastGroupMessage(senderID, req.GroupID, messageData)
 
 	// Load relations
 	db.Preload("Sender").Preload("Group").Preload("File").First(&message, message.ID)
