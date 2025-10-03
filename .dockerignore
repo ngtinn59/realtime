@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.gitkeep
+
+# Development files
+.env.dev
+.env.local
+*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Testing
+*_test.go
+test/
+tests/
+
+# Documentation
+README.md
+*.md
+docs/
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+log/
+*.log
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Air (hot reload)
+.air.toml
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+Makefile
+scripts/

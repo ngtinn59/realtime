@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div>
+        <input type="text" id="token" placeholder="JWT Token" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNiwidXNlcm5hbWUiOiJ0ZXN0dXNlcjMiLCJlbWFpbCI6InRlc3QzQGV4YW1wbGUuY29tIiwiZXhwIjoxNzYwMDYyMzAzLCJpYXQiOjE3NTk0NTc1MDN9.yXfozBl5cBwIsm1uoe0HLKGAao0xQrU4EnFaE1K5UDo">
+        <button onclick="connect()">Connect WebSocket</button>
+        <button onclick="sendTestMessage()">Send Test Message</button>
+    </div>
+    <div>
+        <h3>Status: <span id="status">Disconnected</span></h3>
+        <h3>Messages:</h3>
+        <ul id="messages"></ul>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connect() {
+            const token = document.getElementById('token').value;
+            if (!token) {
+                alert('Please enter JWT token');
+                return;
+            }
+
+            ws = new WebSocket(`ws://localhost:8081/ws?token=${token}`);
+
+            ws.onopen = function() {
+                document.getElementById('status').textContent = 'Connected';
+                console.log('WebSocket connected');
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Received message:', data);
+
+                const messages = document.getElementById('messages');
+                const li = document.createElement('li');
+                li.textContent = JSON.stringify(data);
+                messages.appendChild(li);
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                document.getElementById('status').textContent = 'Error';
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket closed');
+                document.getElementById('status').textContent = 'Disconnected';
+            };
+        }
+
+        function sendTestMessage() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    event: 'send_private_message',
+                    data: {
+                        receiver_id: 15,
+                        content: 'Test message from user 16',
+                        type: 'text'
+                    }
+                };
+                ws.send(JSON.stringify(message));
+                console.log('Sent message:', message);
+            } else {
+                alert('WebSocket not connected');
+            }
+        }
+    </script>
+</body>
+</html>

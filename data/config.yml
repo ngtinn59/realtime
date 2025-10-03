@@ -1,0 +1,22 @@
+server:
+  port: "8081"
+  secret: "8-*e%yKHe3E%%u27$.eN3vdCsZq$Khc$Mp84ZDEQ+y$6f5Q%6rYDk4CS74KzFd2."
+  #release | debug
+  mode: "debug"
+
+cors:
+  global: "true"
+  ips: "http://127.0.0.1:8081,http://localhost:8081"
+
+database:
+  # Supported drivers: postgres, mysql, sqlite, sqlserver
+  driver: "postgres"
+  dbname: "erp_database"
+  username: "erp_user"
+  password: "erp_password"
+  host: "postgres"
+  port: "5432"
+  # SSL mode for postgres: disable, require, verify-ca, verify-full
+  sslmode: false
+  # Enable SQL query logging
+  logmode: true

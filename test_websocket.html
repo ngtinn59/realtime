@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🚀 ERP Chat Real-time Test Suite</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 25px 30px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .header p {
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    .status-bar {
+      background: #f8fafc;
+      padding: 15px 30px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .status-connected {
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    }
+    .status-disconnected {
+      background: #ef4444;
+    }
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 700px;
+    }
+    .panel {
+      padding: 30px;
+      border-right: 1px solid #e2e8f0;
+    }
+    .panel:last-child {
+      border-right: none;
+    }
+    .panel-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 25px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .form-section {
+      background: #f8fafc;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      border: 1px solid #e2e8f0;
+    }
+    .form-section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    textarea {
+      resize: vertical;
+      font-family: 'Consolas', 'Monaco', monospace;
+      min-height: 80px;
+    }
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #5568d3;
+      transform: translateY(-1px);
+    }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #059669;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: #dc2626;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .log-container {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      height: 400px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+    }
+    .log-entry {
+      padding: 8px 0;
+      border-bottom: 1px solid #334155;
+      color: #e2e8f0;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .log-time {
+      color: #64748b;
+      font-size: 11px;
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+    .log-type {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      min-width: 60px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .log-http {
+      background: #f59e0b;
+      color: white;
+    }
+    .log-ws-sent {
+      background: #3b82f6;
+      color: white;
+    }
+    .log-ws-received {
+      background: #10b981;
+      color: white;
+    }
+    .log-error {
+      background: #ef4444;
+      color: white;
+    }
+    .log-success {
+      background: #22c55e;
+      color: white;
+    }
+    .log-content {
+      flex: 1;
+      word-break: break-word;
+    }
+    .metrics {
+      background: #f0f9ff;
+      border: 1px solid #0ea5e9;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 20px;
+    }
+    .metrics-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0c4a6e;
+      margin-bottom: 10px;
+    }
+    .metric-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      font-size: 13px;
+    }
+    .metric-label {
+      color: #0369a1;
+    }
+    .metric-value {
+      font-weight: 600;
+      color: #075985;
+    }
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .quick-btn {
+      padding: 15px;
+      background: #f1f5f9;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .quick-btn:hover {
+      background: #e2e8f0;
+      border-color: #667eea;
+    }
+    .quick-btn-title {
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 4px;
+    }
+    .quick-btn-desc {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .url-display {
+      background: #f8fafc;
+      padding: 10px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #475569;
+      word-break: break-all;
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚀 ERP Chat Real-time Test Suite</h1>
+      <p>Test both HTTP API and WebSocket real-time messaging</p>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="status-dot status-disconnected" id="wsStatus"></div>
+        <span>WebSocket: <span id="wsStatusText">Disconnected</span></span>
+      </div>
+      <div class="status-item">
+        <span>Messages Sent: <span id="msgCount">0</span></span>
+      </div>
+      <div class="status-item">
+        <span>API Base URL: <span id="apiBase">http://localhost:8081/api</span></span>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <!-- HTTP API Panel -->
+      <div class="panel">
+        <div class="panel-title">🌐 HTTP API Testing</div>
+
+        <!-- Authentication Section -->
+        <div class="form-section">
+          <div class="form-section-title">🔐 Authentication</div>
+          <div class="form-group">
+            <label>API Base URL</label>
+            <input type="text" id="apiBaseInput" value="http://localhost:8081/api">
+          </div>
+          <div class="form-group">
+            <label>JWT Token</label>
+            <input type="text" id="jwtToken" placeholder="Login first to get token">
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="login()">🔑 Login</button>
+            <button class="btn btn-primary" onclick="getProfile()">👤 Get Profile</button>
+          </div>
+        </div>
+
+        <!-- Send Message Section -->
+        <div class="form-section">
+          <div class="form-section-title">📨 Send Message via HTTP API</div>
+
+          <div class="form-group">
+            <label>Message Type</label>
+            <select id="httpMessageType">
+              <option value="private">Private Message</option>
+              <option value="group">Group Message</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Receiver ID (for private)</label>
+            <input type="number" id="httpReceiverId" value="2">
+          </div>
+
+          <div class="form-group">
+            <label>Group ID (for group)</label>
+            <input type="number" id="httpGroupId" value="1">
+          </div>
+
+          <div class="form-group">
+            <label>Message Content</label>
+            <textarea id="httpMessageContent">Hello from HTTP API!</textarea>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-success" onclick="sendHttpMessage()">📨 Send via HTTP</button>
+            <button class="btn btn-primary" onclick="getConversations()">💬 Get Conversations</button>
+          </div>
+        </div>
+
+        <!-- Quick Test Actions -->
+        <div class="quick-actions">
+          <button class="quick-btn" onclick="quickHttpTest('private')">
+            <div class="quick-btn-title">💌 Private Test</div>
+            <div class="quick-btn-desc">Send to User #2</div>
+          </button>
+          <button class="quick-btn" onclick="quickHttpTest('group')">
+            <div class="quick-btn-title">👥 Group Test</div>
+            <div class="quick-btn-desc">Send to Group #1</div>
+          </button>
+          <button class="quick-btn" onclick="testBoth()">
+            <div class="quick-btn-title">⚡ Dual Test</div>
+            <div class="quick-btn-desc">HTTP + WebSocket</div>
+          </button>
+          <button class="quick-btn" onclick="clearLogs()">
+            <div class="quick-btn-title">🗑️ Clear Logs</div>
+            <div class="quick-btn-desc">Clear all logs</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- WebSocket & Logs Panel -->
+      <div class="panel">
+        <div class="panel-title">🔌 WebSocket & Real-time</div>
+
+        <!-- WebSocket Connection -->
+        <div class="form-section">
+          <div class="form-section-title">🌐 WebSocket Connection</div>
+          <div class="form-group">
+            <label>WebSocket URL</label>
+            <input type="text" id="wsUrl" value="ws://localhost:8081/ws" readonly>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" id="wsConnectBtn" onclick="connectWebSocket()">🔗 Connect</button>
+            <button class="btn btn-danger" id="wsDisconnectBtn" onclick="disconnectWebSocket()" disabled>🔌 Disconnect</button>
+          </div>
+        </div>
+
+        <!-- Real-time Message Log -->
+        <div class="form-section">
+          <div class="form-section-title">📊 Real-time Activity Log</div>
+          <div class="log-container" id="activityLog"></div>
+        </div>
+
+        <!-- Performance Metrics -->
+        <div class="metrics" id="metrics" style="display: none;">
+          <div class="metrics-title">📈 Performance Comparison</div>
+          <div class="metric-item">
+            <span class="metric-label">HTTP API Time:</span>
+            <span class="metric-value" id="httpTime">0ms</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">WebSocket Delivery:</span>
+            <span class="metric-value" id="wsTime">0ms</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Difference:</span>
+            <span class="metric-value" id="diffTime">0ms</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let messageCount = 0;
+    let httpStartTime = 0;
+    let wsReceiveTime = 0;
+
+    // DOM Elements
+    const wsStatus = document.getElementById('wsStatus');
+    const wsStatusText = document.getElementById('wsStatusText');
+    const msgCount = document.getElementById('msgCount');
+    const apiBase = document.getElementById('apiBase');
+    const activityLog = document.getElementById('activityLog');
+    const metrics = document.getElementById('metrics');
+
+    // HTTP API Elements
+    const apiBaseInput = document.getElementById('apiBaseInput');
+    const jwtToken = document.getElementById('jwtToken');
+    const httpMessageType = document.getElementById('httpMessageType');
+    const httpReceiverId = document.getElementById('httpReceiverId');
+    const httpGroupId = document.getElementById('httpGroupId');
+    const httpMessageContent = document.getElementById('httpMessageContent');
+
+    // WebSocket Elements
+    const wsUrl = document.getElementById('wsUrl');
+    const wsConnectBtn = document.getElementById('wsConnectBtn');
+    const wsDisconnectBtn = document.getElementById('wsDisconnectBtn');
+
+    // Utility Functions
+    function log(message, type = 'info', source = 'system') {
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+
+      let typeClass = 'log-http';
+      let icon = '🌐';
+
+      if (type === 'ws-sent') {
+        typeClass = 'log-ws-sent';
+        icon = '📤';
+      } else if (type === 'ws-received') {
+        typeClass = 'log-ws-received';
+        icon = '📥';
+      } else if (type === 'error') {
+        typeClass = 'log-error';
+        icon = '❌';
+      } else if (type === 'success') {
+        typeClass = 'log-success';
+        icon = '✅';
+      }
+
+      entry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-type ${typeClass}">${icon}</span>
+        <span class="log-content">${message}</span>
+      `;
+
+      activityLog.appendChild(entry);
+      activityLog.scrollTop = activityLog.scrollHeight;
+      messageCount++;
+      msgCount.textContent = messageCount;
+    }
+
+    function clearLogs() {
+      activityLog.innerHTML = '';
+      messageCount = 0;
+      msgCount.textContent = '0';
+      metrics.style.display = 'none';
+      log('Logs cleared', 'success');
+    }
+
+    function updateWebSocketStatus(connected) {
+      if (connected) {
+        wsStatus.className = 'status-dot status-connected';
+        wsStatusText.textContent = 'Connected';
+        wsConnectBtn.disabled = true;
+        wsDisconnectBtn.disabled = false;
+      } else {
+        wsStatus.className = 'status-dot status-disconnected';
+        wsStatusText.textContent = 'Disconnected';
+        wsConnectBtn.disabled = false;
+        wsDisconnectBtn.disabled = true;
+      }
+    }
+
+    function updateApiBase() {
+      apiBase.textContent = apiBaseInput.value;
+    }
+
+    // HTTP API Functions
+    async function makeApiCall(endpoint, method = 'GET', body = null) {
+      const url = `${apiBaseInput.value}${endpoint}`;
+      const config = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      };
+
+      if (jwtToken.value) {
+        config.headers['Authorization'] = `Bearer ${jwtToken.value}`;
+      }
+
+      if (body) {
+        config.body = JSON.stringify(body);
+      }
+
+      log(`Making ${method} request to ${url}`, 'info');
+
+      try {
+        const response = await fetch(url, config);
+        const data = await response.json();
+
+        if (response.ok) {
+          log(`HTTP Response: ${JSON.stringify(data, null, 2)}`, 'success');
+          return data;
+        } else {
+          log(`HTTP Error ${response.status}: ${JSON.stringify(data)}`, 'error');
+          throw new Error(data.message || 'API Error');
+        }
+      } catch (error) {
+        log(`HTTP Request failed: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+
+    async function login() {
+      const email = 'test@example.com';
+      const password = 'password123';
+
+      log(`Attempting login with ${email}`, 'info');
+
+      try {
+        const response = await makeApiCall('/login', 'POST', { email, password });
+        jwtToken.value = response.token;
+        log('Login successful! Token saved.', 'success');
+      } catch (error) {
+        log('Login failed', 'error');
+      }
+    }
+
+    async function getProfile() {
+      if (!jwtToken.value) {
+        log('Please login first', 'error');
+        return;
+      }
+
+      try {
+        await makeApiCall('/profile');
+      } catch (error) {
+        // Error already logged
+      }
+    }
+
+    async function sendHttpMessage() {
+      if (!jwtToken.value) {
+        log('Please login first', 'error');
+        return;
+      }
+
+      const messageType = httpMessageType.value;
+      const content = httpMessageContent.value;
+      let endpoint, body;
+
+      if (messageType === 'private') {
+        endpoint = '/messages/private';
+        body = {
+          receiver_id: parseInt(httpReceiverId.value),
+          content: content,
+          type: 'text'
+        };
+      } else {
+        endpoint = '/messages/group';
+        body = {
+          group_id: parseInt(httpGroupId.value),
+          content: content,
+          type: 'text'
+        };
+      }
+
+      httpStartTime = Date.now();
+      wsReceiveTime = 0;
+
+      try {
+        await makeApiCall(endpoint, 'POST', body);
+        log('HTTP message sent successfully', 'success');
+      } catch (error) {
+        // Error already logged
+      }
+    }
+
+    async function getConversations() {
+      if (!jwtToken.value) {
+        log('Please login first', 'error');
+        return;
+      }
+
+      try {
+        await makeApiCall('/conversations');
+      } catch (error) {
+        // Error already logged
+      }
+    }
+
+    function quickHttpTest(type) {
+      if (type === 'private') {
+        httpMessageType.value = 'private';
+        httpMessageContent.value = `Quick private message test - ${new Date().toLocaleTimeString()}`;
+        sendHttpMessage();
+      } else if (type === 'group') {
+        httpMessageType.value = 'group';
+        httpMessageContent.value = `Quick group message test - ${new Date().toLocaleTimeString()}`;
+        sendHttpMessage();
+      }
+    }
+
+    async function testBoth() {
+      log('🚀 Starting dual test (HTTP + WebSocket)', 'info');
+
+      // Send via HTTP first
+      await quickHttpTest('private');
+
+      // Wait a bit then send via WebSocket
+      setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          sendWebSocketMessage('send_private_message', {
+            receiver_id: parseInt(httpReceiverId.value),
+            content: `WebSocket message - ${new Date().toLocaleTimeString()}`,
+            type: 'text'
+          });
+        }
+      }, 1000);
+    }
+
+    // WebSocket Functions
+    function connectWebSocket() {
+      if (!jwtToken.value) {
+        log('Please login first to get JWT token', 'error');
+        return;
+      }
+
+      const url = `${wsUrl.value}?token=${jwtToken.value}`;
+      log(`Connecting to WebSocket: ${url}`, 'info');
+
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        updateWebSocketStatus(true);
+        log('WebSocket connected successfully! 🎉', 'success', 'websocket');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.event === 'private_message' || data.event === 'group_message') {
+            wsReceiveTime = Date.now();
+
+            if (httpStartTime > 0) {
+              const httpTime = wsReceiveTime - httpStartTime;
+              showMetrics(httpTime);
+            }
+          }
+
+          log(`WebSocket Received: ${JSON.stringify(data, null, 2)}`, 'ws-received');
+        } catch (e) {
+          log(`WebSocket Raw Message: ${event.data}`, 'ws-received');
+        }
+      };
+
+      ws.onerror = (error) => {
+        log(`WebSocket error: ${error.message || 'Unknown error'}`, 'error');
+      };
+
+      ws.onclose = (event) => {
+        updateWebSocketStatus(false);
+        log(`WebSocket closed (Code: ${event.code})`, 'info');
+
+        if (!event.wasClean) {
+          log('Connection died unexpectedly', 'error');
+        }
+      };
+    }
+
+    function disconnectWebSocket() {
+      if (ws) {
+        log('Closing WebSocket connection...', 'info');
+        ws.close();
+      }
+    }
+
+    function sendWebSocketMessage(event, data) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log('WebSocket not connected', 'error');
+        return;
+      }
+
+      const message = { event, data };
+      ws.send(JSON.stringify(message));
+      log(`WebSocket Sent: ${JSON.stringify(message, null, 2)}`, 'ws-sent');
+    }
+
+    function showMetrics(httpTime) {
+      const httpTimeEl = document.getElementById('httpTime');
+      const wsTimeEl = document.getElementById('wsTime');
+      const diffTimeEl = document.getElementById('diffTime');
+
+      httpTimeEl.textContent = `${httpTime}ms`;
+      wsTimeEl.textContent = 'Instant';
+      diffTimeEl.textContent = `${httpTime}ms faster via WebSocket`;
+
+      metrics.style.display = 'block';
+
+      log(`📊 Performance: HTTP API took ${httpTime}ms, WebSocket was instant`, 'success');
+    }
+
+    // Event Listeners
+    apiBaseInput.addEventListener('input', updateApiBase);
+
+    // Initialize
+    updateApiBase();
+    log('🚀 ERP Chat Test Suite Ready! Login to start testing.', 'success');
+    log('💡 Tip: Use "Dual Test" to compare HTTP vs WebSocket performance', 'info');
+  </script>
+</body>
+</html>

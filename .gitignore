@@ -1,0 +1,60 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+bin/
+tmp/
+/Godeps/
+.idea/
+uploads/
+
+# Logs
+log/application.log
+log/database.log
+log/system.log
+log/*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database backups
+backup_*.sql
+*.sql.backup
+
+# Docker volumes data (if mounted locally)
+data/postgres/
+data/redis/
+
+### VisualStudioCode ###
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+### macOS ###
+.DS_Store
+.AppleDouble
+.LSOverride
+
+### Linux ###
+*~
+.directory
+
+### Windows ###
+Thumbs.db
+ehthumbs.db
+Desktop.ini
