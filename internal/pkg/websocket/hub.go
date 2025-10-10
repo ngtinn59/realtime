@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -304,9 +306,68 @@ func (h *Hub) handleTypingIndicator(bm BroadcastMessage) {
 	// Set typing status in Redis
 	redis.SetUserTyping(bm.SenderID, conversationID)
 
-	// Broadcast to conversation participants
-	if receiverID, ok := bm.Message.Data["receiver_id"].(float64); ok {
-		h.SendToUser(uint(receiverID), "user_typing", bm.Message.Data)
+	// Determine chat type and ID from conversation_id (format: "private:123" or "group:456")
+	var chatType string
+	var chatID uint
+
+	if strings.HasPrefix(conversationID, "private:") {
+		chatType = "private"
+		chatIDStr := strings.TrimPrefix(conversationID, "private:")
+		if chatIDInt, parseErr := strconv.ParseUint(chatIDStr, 10, 32); parseErr == nil {
+			chatID = uint(chatIDInt)
+		} else {
+			logrus.Errorf("Invalid private conversation ID: %s", conversationID)
+			return
+		}
+	} else if strings.HasPrefix(conversationID, "group:") {
+		chatType = "group"
+		chatIDStr := strings.TrimPrefix(conversationID, "group:")
+		if chatIDInt, parseErr := strconv.ParseUint(chatIDStr, 10, 32); parseErr == nil {
+			chatID = uint(chatIDInt)
+		} else {
+			logrus.Errorf("Invalid group conversation ID: %s", conversationID)
+			return
+		}
+	} else {
+		logrus.Errorf("Invalid conversation ID format: %s", conversationID)
+		return
+	}
+
+	// Prepare typing data for broadcast
+	var typingChatID uint
+	if chatType == "private" {
+		typingChatID = bm.SenderID // For recipient, chat_id should be sender's ID
+	} else {
+		typingChatID = chatID // For groups, chat_id is the group ID
+	}
+	
+	typingData := map[string]interface{}{
+		"user_id":   bm.SenderID,
+		"username":  bm.Message.Data["username"], // If available
+		"is_typing": bm.Message.Data["is_typing"],
+		"chat_type": chatType,
+		"chat_id":   typingChatID,
+	}
+
+	if chatType == "private" {
+		// For private chat, broadcast to the other participant
+		h.SendToUser(chatID, "typing", typingData)
+	} else if chatType == "group" {
+		// For group chat, broadcast to all group members except sender
+		// Get group members from database
+		db := database.GetDB()
+		var members []models.GroupMember
+		if err := db.Where("group_id = ?", chatID).Find(&members).Error; err != nil {
+			logrus.Errorf("Failed to get group members for group %d: %v", chatID, err)
+			return
+		}
+
+		// Broadcast to all members except sender
+		for _, member := range members {
+			if member.UserID != bm.SenderID {
+				h.SendToUser(member.UserID, "typing", typingData)
+			}
+		}
 	}
 }
 

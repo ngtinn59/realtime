@@ -27,7 +27,7 @@ type Config struct {
 // Setup initializes Redis client
 func Setup(config Config) error {
 	addr := fmt.Sprintf("%s:%s", config.Host, config.Port)
-	
+
 	Client = redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: config.Password,
@@ -80,7 +80,7 @@ func GetOnlineUsers() ([]string, error) {
 		fmt.Sscanf(key, "user:online:%s", &userID)
 		userIDs = append(userIDs, userID)
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func CleanupExpiredTyping() error {
 			keysToDelete = append(keysToDelete, key)
 		}
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func GetTypingUsers(conversationID string) ([]string, error) {
 		fmt.Sscanf(key, "typing:"+conversationID+":%s", &userID)
 		userIDs = append(userIDs, userID)
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return nil, err
 	}
@@ -213,8 +213,8 @@ func GetUserSession(userID uint) (map[string]interface{}, error) {
 // BroadcastToChannel broadcasts a message to a specific channel
 func BroadcastToChannel(channel string, event string, data map[string]interface{}) error {
 	message := map[string]interface{}{
-		"event": event,
-		"data":  data,
+		"event":     event,
+		"data":      data,
 		"timestamp": time.Now().Unix(),
 	}
 
